@@ -27,7 +27,7 @@ SSH_CMD_TARGET="ssh -i ${SSH_I_TARGET} ${SSH_USER_HOST_TARGET}"
 SSH_XFER_TARGET="ssh -i ${SSH_I_TARGET} -e none ${SSH_USER_HOST_TARGET}"
 
 HOST_SOURCE="mdba3"
-SSH_I_SOURCE="/root/.ssh/zfs-nostalgia_rsa"
+SSH_I_SOURCE="/root/.ssh/zfsnostalgia_rsa"
 SSH_USER_HOST_SOURCE="su@${HOST_SOURCE}"
 SSH_CMD_SOURCE="ssh -i ${SSH_I_SOURCE} ${SSH_USER_HOST_SOURCE}"
 SSH_XFER_SOURCE="ssh -i ${SSH_I_SOURCE} -e none ${SSH_USER_HOST_SOURCE}"
@@ -44,18 +44,19 @@ SSH_XFER_SOURCE="ssh -i ${SSH_I_SOURCE} -e none ${SSH_USER_HOST_SOURCE}"
 
 function usage_n_exit()
 {
-    gecho "Usage: $(basename $0) send"
-    gecho "       $(basename $0) list-zfs-root-clone | list-snap"
-    gecho "       $(basename $0) -b=<zfs_root_clone> [ current | mount [snap] | umount ]"
+    gecho "Usage:"
+    gecho "  on source host:"
+    gecho "    $(basename $0) send"
+    gecho "  on target host:"
+    gecho "    $(basename $0) list-zfs-root-clone | list-snap"
+    gecho "    $(basename $0) [-b=<zfs_root_clone>] [ mount [snap] | current | umount | clean-old-snap ]"
+    gecho "    $(basename $0) [-b=<zfs_root_clone>] umc [snap]"
     gecho ""
     gecho "  default options:"
-    gecho "     -b: ${ZFS_ROOT_CLONE}"
+    gecho '     -b: '${ZFS_ROOT_CLONE}", allow to use an other ${ZFS_ROOT_CLONE}"
     gecho "   snap: the last (youngest) snapshot available"
     gecho ""
-    gecho "  note:"
-    gecho "   send could be only launched within the host-src"
-    gecho "   all the other option could be only launched within the host-tgt"
-    gecho "   Do no worry as this is enforced by the sofware"
+    gecho "  note: umc does: umount, mount & clean-old-snap" 
     exit 1
 }
 
@@ -93,7 +94,6 @@ ZFS_HIST_CREATION_OPTION["data"]="-o recordsize=8k \
 ZFS_HIST_CREATION_OPTION_DEFAULT="-o ch.unige:no_snapshots=on \
                                   -o readonly=on \
                                   -o ch.unige:created_by=${APPLICATION_NAME}"
-
 #
 # clone
 unset ZFS_CLONE_CREATION_OPTION
@@ -104,18 +104,14 @@ ZFS_CLONE_CREATION_OPTION["data"]="-o recordsize=8k \
                                    -o ch.unige:no_snapshots=on \
                                    -o readonly=on \
                                    -o ch.unige:created_by=${APPLICATION_NAME} \
-                                   -o ch.unige.${APPLICATION_NAME}:zfs_root_clone=${ZFS_ROOT_CLONE}"
-                                   
+                                   -o ch.unige.${APPLICATION_NAME}:zfs_root_clone=${ZFS_ROOT_CLONE}"                                   
+#
 ZFS_CLONE_CREATION_OPTION_DEFAULT="-o ch.unige:no_snapshots=on \
                                    -o readonly=on \
                                    -o ch.unige:created_by=${APPLICATION_NAME} \
                                    -o ch.unige.${APPLICATION_NAME}:zfs_root_clone=${ZFS_ROOT_CLONE}"
-                                   
-
 #
 # clean
-
-
 
 
 #
@@ -253,12 +249,97 @@ function send()
 
 #
 # check that the last snap are the same for all of them
-function ezmount_last_snap()
+#~ function mount_last_snap()
+#~ {
+    #~ gecho -n "search for the last zfssnap... "
+    #~ for subzfs in ${LIST_OF_SUBZFS_CLONE}
+    #~ do
+        #~ #
+        #~ # construct the zfs HIST DB
+        #~ if test -z "${subzfs}"
+        #~ then
+            #~ hist_zfs="${ZFS_ROOT_HIST}"
+            #~ db_zfs="${ZFS_ROOT_CLONE}"
+        #~ else
+            #~ hist_zfs="${ZFS_ROOT_HIST}/${subzfs}"
+            #~ db_zfs="${ZFS_ROOT_CLONE}/${subzfs}"
+        #~ fi
+        #~ #
+        #~ # get the last snap of the hist
+        #~ last_zfssnap=$(zfs list -H -o name -t snapshot -r -d 1 -s creation ${hist_zfs} \
+                      #~ | ggrep "${SNAP_HIST_PATTERN}" \
+                      #~ | tail -1)
+        #~ if test -z "${last_zfssnap}"
+        #~ then
+            #~ gecho "x"
+            #~ gecho " - exit"
+            #~ exit 1
+        #~ fi
+        #~ last_snap=$(gecho ${last_zfssnap} | cut -d @ -f2)
+        #~ last_snap_by_subzfs[${subzfs}]=${last_snap}
+    #~ done
+    #~ #
+    #~ # check that the last_snap are the same for each subzfs
+    #~ tmp_snap=${last_snap_by_subzfs[@]:0:1}
+    #~ for value in ${last_snap_by_subzfs[@]}
+    #~ do
+        #~ if test "${value}" != "${tmp_snap}"
+        #~ then
+            #~ gecho "x"
+            #~ gecho " - can not use this snap($tmp_snap) as it is not present"
+            #~ gecho "   on all subzfs:"
+            #~ for subzfs in "${!last_snap_by_subzfs[@]}"
+            #~ do
+                #~ gecho "    - ${subzfs} :${last_snap_by_subzfs[${subzfs}]} "
+            #~ done
+            #~ gecho " - exit"
+            #~ exit 1
+        #~ fi
+    #~ done        
+    #~ gecho "v"
+    #~ #
+    #~ # mount it
+    #~ mount_snap "${tmp_snap}"
+#~ }
+
+function zn_mount_snap()
 {
-    gecho -n "search for the last zfssnap... "
+    #
+    # parse the arguments
+    has_to_force_umount="False"
+    if test $1 == "--force-umount"
+    then
+        has_to_force_umount="True"
+        snap=$2
+    else
+        snap=$1
+    fi
+    #
+    # check if already mounted
+    if test "$(current ${ZFS_ROOT_CLONE})" == "${snap}"
+    then
+        gecho "last mounted(${snap}) already mounted"
+        gecho " - exit"
+        exit 0
+    fi
+    #
+    # umount the clone
+    if test "${has_to_force_umount}" == "True"
+    then
+        zn_umount
+    fi
+    #
+    # check that there is no current
+    if test -n "$(current ${ZFS_ROOT_CLONE})"
+    then
+        gecho "unable to mount snap(${snap}) has this zfs_root_clone(${ZFS_ROOT_CLONE}) is already mounted"
+        gecho "umount it, or use the command umc (Umount, Mount, Clean)"
+        exit 1
+    fi
+    #
+    # check that this snap is available on each subzfs
     for subzfs in ${LIST_OF_SUBZFS_CLONE}
     do
-        #
         # construct the zfs HIST DB
         if test -z "${subzfs}"
         then
@@ -268,56 +349,12 @@ function ezmount_last_snap()
             hist_zfs="${ZFS_ROOT_HIST}/${subzfs}"
             db_zfs="${ZFS_ROOT_CLONE}/${subzfs}"
         fi
-        #
-        # get the last snap of the hist
-        last_zfssnap=$(zfs list -H -o name -t snapshot -r -d 1 -s creation ${hist_zfs} \
-                      | ggrep "${SNAP_HIST_PATTERN}" \
-                      | tail -1)
-        if test -z "${last_zfssnap}"
+        if ! $(zfs list -t snapshot ${hist_zfs}@${snap} &> /dev/null)
         then
-            gecho "x"
-            gecho " - exit"
+            gecho "can not clone this ${hist_zfs}@${snap}, as this zfs does not exit"
             exit 1
         fi
-        last_snap=$(gecho ${last_zfssnap} | cut -d @ -f2)
-        last_snap_by_subzfs[${subzfs}]=${last_snap}
     done
-    #
-    # check that the last_snap are the same for each subzfs
-    tmp_snap=${last_snap_by_subzfs[@]:0:1}
-    for value in ${last_snap_by_subzfs[@]}
-    do
-        if test "${value}" != "${tmp_snap}"
-        then
-            gecho "x"
-            gecho " - can not use this snap($tmp_snap) as it is not present"
-            gecho "   on all subzfs:"
-            for subzfs in "${!last_snap_by_subzfs[@]}"
-            do
-                gecho "    - ${subzfs} :${last_snap_by_subzfs[${subzfs}]} "
-            done
-            gecho " - exit"
-            exit 1
-        fi
-    done        
-    gecho "v"
-    #
-    # mount it
-    ezmount_snap "${tmp_snap}"
-}
-
-function ezmount_snap()
-{
-    snap=$1
-    if test "$(current)" == "$1"
-    then
-        gecho "last mounted($1) already mounted"
-        gecho " - exit"
-        exit 0
-    fi
-    #
-    # umount the clone
-    ezumount
     #
     # mount the clone
     gecho -n "mounting the clone... "
@@ -347,7 +384,7 @@ function ezmount_snap()
     gecho "v"
 }
 
-function ezumount()
+function zn_umount()
 {
     gecho -n "umounting... "
     for subzfs in ${LIST_OF_SUBZFS_CLONE}
@@ -407,6 +444,11 @@ function list_zfs_root_clone()
 function current()
 {
     zfs_root_clone="$1"
+    if test -z "${zfs_root_clone}"
+    then
+        gecho "current should be call with an argument"
+        exit 1
+    fi
     unset current_for_subzfs
     declare -A current_for_subzfs
     for subzfs in ${LIST_OF_SUBZFS_CLONE}
@@ -452,7 +494,7 @@ function current()
 }
 
 ##################################
-#  CLEAN
+#  CLEAN-OLD-SNAP
 #
 
 #~ HOST_SOURCE="mdba3"
@@ -463,7 +505,7 @@ function current()
 
 
 
-function clean()
+function clean_old_snap()
 {
     for subzfs in ${LIST_OF_SUBZFS_HIST}
     do
@@ -647,20 +689,12 @@ if ((  $# == 2 ))
 then
     if test "$1" != "mount"
     then
-        usage_n_exit
+        if test "$1" != "umc"
+        then
+            usage_n_exit
+        fi
     fi
 fi
-
-#
-# for info
-#~ function usage_n_exit()
-#~ {
-    #~ gecho "Usage: $(basename $0)  send"
-    #~ gecho "       $(basename $0) list-zfs-root-clone | list-snap"
-    #~ gecho "       $(basename $0) -b=<zfs_root_clone> current | list-snap | mount [snap] | umount"
-    #~ gecho "  e.g. -b=rpool/oracle/w-1"
-    #~ exit 1
-#~ }
 
 if test -z "$1"
 then
@@ -676,11 +710,11 @@ fi
 case "$1" in
     umount)
         exit_if_not_on_target
-        ezumount
+        zn_umount
         ;;
     unmount)
         exit_if_not_on_target
-        ezumount
+        zn_umount
         ;;
     mount)
         exit_if_not_on_target
@@ -689,16 +723,45 @@ case "$1" in
         then
             if list_snap | ggrep -q "^${snap}$" 
             then
-                ezmount_snap ${snap}
+                zn_mount_snap ${snap}
             else
                 gecho "can not mount snap(${snap}) as this in not in list-snap"
                 gecho "exit"
                 exit 1
             fi
         else
-            ezmount_last_snap
+            last_snap=$(list_snap | tail -1)
+            if test -z ${last_snap}
+            then
+                gecho "can not mount the last snap, as there is no snap available"
+                exit 1
+            fi
+            zn_mount_snap "${last_snap}"
         fi
-        clean
+        ;;
+    umc)
+        exit_if_not_on_target
+        snap=$2
+        if test -n "${snap}"
+        then
+            if list_snap | ggrep -q "^${snap}$" 
+            then
+                zn_mount_snap "--force-umount" "${snap}"
+            else
+                gecho "can not mount snap(${snap}) as this in not in list-snap"
+                gecho "exit"
+                exit 1
+            fi
+        else
+            last_snap=$(list_snap | tail -1)
+            if test -z ${last_snap}
+            then
+                gecho "can not mount the last snap, as there is no snap available"
+                exit 1
+            fi
+            zn_mount_snap "--force-umount" "${last_snap}"
+        fi
+        clean_old_snap
         ;;
     current)
         exit_if_not_on_target
@@ -719,9 +782,9 @@ case "$1" in
         exit_if_not_on_target
         list_zfs_root_clone
         ;;
-    clean)
+    clean-old-snap)
         exit_if_not_on_target
-        clean
+        clean_old_snap    
         ;;
     *)
         usage_n_exit
