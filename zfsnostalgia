@@ -44,12 +44,18 @@ SSH_XFER_SOURCE="ssh -i ${SSH_I_SOURCE} -e none ${SSH_USER_HOST_SOURCE}"
 
 function usage_n_exit()
 {
-    gecho "Usage: $(basename $0)  send"
+    gecho "Usage: $(basename $0) send"
     gecho "       $(basename $0) list-zfs-root-clone | list-snap"
     gecho "       $(basename $0) -b=<zfs_root_clone> [ current | mount [snap] | umount ]"
     gecho ""
     gecho "  default options:"
-    gecho "    -b=${ZFS_ROOT_CLONE}"
+    gecho "     -b: ${ZFS_ROOT_CLONE}"
+    gecho "   snap: the last (youngest) snapshot available"
+    gecho ""
+    gecho "  note:"
+    gecho "   send could be only launched within the host-src"
+    gecho "   all the other option could be only launched within the host-tgt"
+    gecho "   Do no worry as this is enforced by the sofware"
     exit 1
 }
 
