@@ -20,7 +20,7 @@ zfsnostalgia -h
   #    snap: the last (youngest) snapshot available
   # 
   #  note: umc does: umount, mount & clean-old-snap
-  #   more info on : http://github.com/briner/zfsnostalgia
+  #  more info on : http://github.com/briner/zfsnostalgia
 ```
 
 * pay attention that mount, will do: umount, mount, clean
@@ -142,12 +142,12 @@ cleaning... v (now it is a bit longer)
   * check it
    *  with zfsnostalgia, as you can see it is mounted on rpool/oracle/ictst (```ZFS_ROOT_CLONE```). The "v" tells that it is mounted with the last (youngest) snapshot available
 ```bash
-zfsnostalgia 
-available snap:
-  dolly_mnt::2014.02.11_19:00:03.879178::host-src::ONLINE
-  dolly_mnt::2014.02.12_19:00:06.723837::host-src::ONLINE
-clone mounted :
-  v rpool/oracle/ictst@dolly_mnt::2014.02.12_19:00:06.723837::host-src::ONLINE   
+zfsnostalgia
+  # available snap:
+  #   dolly_mnt::2014.02.11_19:00:03.879178::host-src::ONLINE
+  #   dolly_mnt::2014.02.12_19:00:06.723837::host-src::ONLINE
+  # clone mounted : d(Default zfs_root_clone), l(using Last snapshot available), o(using a old snapshot)
+  #   dl rpool/oracle/ictst@dolly_mnt::2014.02.12_19:00:06.723837::host-src::ONLINE
 ```
   * with zfs, let's check only rpool/oracle/ictst/data
 ```bash

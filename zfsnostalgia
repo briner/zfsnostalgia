@@ -32,6 +32,10 @@ SSH_USER_HOST_SOURCE="su@${HOST_SOURCE}"
 SSH_CMD_SOURCE="ssh -i ${SSH_I_SOURCE} ${SSH_USER_HOST_SOURCE}"
 SSH_XFER_SOURCE="ssh -i ${SSH_I_SOURCE} -e none ${SSH_USER_HOST_SOURCE}"
 
+#
+# util
+DEFAULT_ZFS_ROOT_CLONE="${ZFS_ROOT_CLONE}"
+
 
 
 ##################################
@@ -114,9 +118,6 @@ ZFS_CLONE_CREATION_OPTION_DEFAULT="-o ch.unige:no_snapshots=on \
 #
 # clean
 
-#
-# util
-DEFAULT_ZFS_ROOT_CLONE=${ZFS_ROOT_CLONE}
 
 #
 #~ unset last_snap_by_subzfs
@@ -587,7 +588,7 @@ function status()
     list_snap | gsed "s|^|  |"
     #
     # clone
-    gecho "clone mounted : d(Default zfs_root_clone), l(using Last snapshot available), o(using a old snapshot)"
+    gecho "clone mounted : d(Default zfs_root_clone)/-(not default one), l(using Last snapshot available)/o(using a old snapshot)"
     tmp_list_zfs_root_clone=$(list_zfs_root_clone)
     if test -z "${tmp_list_zfs_root_clone}"
     then
@@ -597,7 +598,7 @@ function status()
         do
             #
             # is this the default ZFS_ROOT_CLONE
-            if test "${DEFAULT_ZFS_ROOT_CLONE}" == "${ZFS_ROOT_CLONE}"
+            if test "${DEFAULT_ZFS_ROOT_CLONE}" == "${clone}"
             then
                 gecho -n "  d"
             else
