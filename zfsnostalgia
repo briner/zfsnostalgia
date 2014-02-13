@@ -470,9 +470,6 @@ function clean_old_snap()
             zfs_root_hist="${ZFS_ROOT_HIST}/${subzfs}"
         fi
         i=0
-        #~ gecho "-----"
-        #~ gecho "doing zfs(${zfs_root_source}) "
-        #~ gecho "-----"
         while true
         do
             if (( i == ${MAX_TRY} ))
