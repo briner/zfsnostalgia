@@ -57,6 +57,7 @@ function usage_n_exit()
     gecho "   snap: the last (youngest) snapshot available"
     gecho ""
     gecho "  note: umc does: umount, mount & clean-old-snap" 
+    gecho "  more info on : http://github.com/briner/zfsnostalgia"
     exit 1
 }
 
