@@ -1,0 +1,723 @@
+#!/bin/bash
+
+##################################
+# DEFINITION
+#
+
+#
+# global
+APPLICATION_NAME="zfsnostalgia"
+LIST_OF_SUBZFS_HIST="ctl_rdo data admin"
+LIST_OF_SUBZFS_CLONE="ctl_rdo data"
+
+ZFS_ROOT_SOURCE="rpool/oracle/dbatst1"
+ZFS_ROOT_HIST="rpool/oracle/ictst-hist"
+ZFS_ROOT_CLONE="rpool/oracle/ictst"
+SNAP_HIST_PATTERN="dolly"
+
+MAX_SEND_OCCURENCE=10
+
+#
+# ssh
+
+HOST_TARGET="mdba4"
+SSH_I_TARGET="/root/.ssh/zfsnostalgia_rsa"
+SSH_USER_HOST_TARGET="su@${HOST_TARGET}"
+SSH_CMD_TARGET="ssh -i ${SSH_I_TARGET} ${SSH_USER_HOST_TARGET}"
+SSH_XFER_TARGET="ssh -i ${SSH_I_TARGET} -e none ${SSH_USER_HOST_TARGET}"
+
+HOST_SOURCE="mdba3"
+SSH_I_SOURCE="/root/.ssh/zfs-nostalgia_rsa"
+SSH_USER_HOST_SOURCE="su@${HOST_SOURCE}"
+SSH_CMD_SOURCE="ssh -i ${SSH_I_SOURCE} ${SSH_USER_HOST_SOURCE}"
+SSH_XFER_SOURCE="ssh -i ${SSH_I_SOURCE} -e none ${SSH_USER_HOST_SOURCE}"
+
+
+
+##################################
+# PREPARSING OF OPTIONS
+#
+# which have to be before the rest of the definition as the "-b" option
+# overides ZFS_ROOT_CLONE
+
+
+
+function usage_n_exit()
+{
+    gecho "Usage: $(basename $0)  send"
+    gecho "       $(basename $0) list-zfs-root-clone | list-snap"
+    gecho "       $(basename $0) -b=<zfs_root_clone> [ current | mount [snap] | umount ]"
+    gecho ""
+    gecho "  default options:"
+    gecho "    -b=${ZFS_ROOT_CLONE}"
+    exit 1
+}
+
+is_zfs_root_clone_overided="False"
+while getopts "b:h" opt; do
+    case $opt in
+    b)
+        ZFS_ROOT_CLONE=$OPTARG
+        is_zfs_root_clone_overided="True"
+        ;;
+    h)
+        usage_n_exit
+        ;;
+  esac
+done
+
+
+shift $((OPTIND-1))
+
+
+##################################
+#  REST OF DEFINITION
+#
+
+#
+# send
+unset ZFS_HIST_CREATION_OPTION
+declare -A ZFS_HIST_CREATION_OPTION
+ZFS_HIST_CREATION_OPTION["data"]="-o recordsize=8k \
+                                  -o primarycache=metadata \
+                                  -o logbias=throughput \
+                                  -o ch.unige:no_snapshots=on \
+                                  -o readonly=on \
+                                  -o ch.unige:created_by=${APPLICATION_NAME}"
+ZFS_HIST_CREATION_OPTION_DEFAULT="-o ch.unige:no_snapshots=on \
+                                  -o readonly=on \
+                                  -o ch.unige:created_by=${APPLICATION_NAME}"
+
+#
+# clone
+unset ZFS_CLONE_CREATION_OPTION
+declare -A ZFS_CLONE_CREATION_OPTION
+ZFS_CLONE_CREATION_OPTION["data"]="-o recordsize=8k \
+                                   -o primarycache=metadata \
+                                   -o logbias=throughput \
+                                   -o ch.unige:no_snapshots=on \
+                                   -o readonly=on \
+                                   -o ch.unige:created_by=${APPLICATION_NAME} \
+                                   -o ch.unige.${APPLICATION_NAME}:zfs_root_clone=${ZFS_ROOT_CLONE}"
+                                   
+ZFS_CLONE_CREATION_OPTION_DEFAULT="-o ch.unige:no_snapshots=on \
+                                   -o readonly=on \
+                                   -o ch.unige:created_by=${APPLICATION_NAME} \
+                                   -o ch.unige.${APPLICATION_NAME}:zfs_root_clone=${ZFS_ROOT_CLONE}"
+                                   
+
+#
+# clean
+
+
+
+
+#
+unset last_snap_by_subzfs
+declare -A last_snap_by_subzfs
+
+
+
+
+##################################
+#  SEND
+#
+
+
+
+function send()
+{
+    gecho "starting send"
+    for subzfs in ${LIST_OF_SUBZFS_HIST}
+    do
+        #
+        # construct the zfs from to
+        if test -z "${subzfs}"
+        then
+            zfs_root_source="${ZFS_ROOT_SOURCE}"
+            zfs_root_hist="${ZFS_ROOT_HIST}"
+        else
+            zfs_root_source="${ZFS_ROOT_SOURCE}/${subzfs}"
+            zfs_root_hist="${ZFS_ROOT_HIST}/${subzfs}"
+        fi
+        i=0
+        gecho "-----"
+        gecho "doing zfs(${zfs_root_source}) "
+        gecho "-----"
+        while true
+        do
+            let i++
+            gecho "  step (${i})"
+            #
+            # exit if dead loop
+            if (( i == ${MAX_SEND_OCCURENCE} ))
+            then
+                gecho "too many occurence, it seems a dead loop:"
+                gecho "skip this zfs(${zfs_root_source})"
+                break
+            fi
+            #
+            # check if there is a zfs distant
+            gecho -n "    check if there is a zfs(${zfs_root_hist}) distant... "
+            if ! $(${SSH_CMD_TARGET} zfs list -t filesystem ${zfs_root_hist} &> /dev/null)
+            then
+                #
+                # we do not have a zfs distant
+                gecho "x"
+                #
+                # send receive the first snap
+                gecho -n "     - test if there is a snap to send... "
+                first_zfssnap=$(zfs list -H -o name -t snapshot -r -d 1 -s creation ${zfs_root_source} \
+                              | ggrep "${SNAP_HIST_PATTERN}" \
+                              | head -1)
+                if test -n "${first_zfssnap}"
+                then
+                    gecho "v"
+                    gecho "       - do a full from (${first_zfssnap}) to (${zfs_root_hist})"
+                    zfs_option=${ZFS_HIST_CREATION_OPTION[${subzfs}]:-${ZFS_HIST_CREATION_OPTION_DEFAULT}}
+                    zfs send ${first_zfssnap} | ${SSH_XFER_TARGET} zfs receive ${zfs_option} ${zfs_root_hist}
+                    continue
+                else
+                    gecho "x"
+                    gecho "       - unable to create a full zfs for zfs(zfs_root_source) as it has not a snapshotname catched by grep \"${SNAP_HIST_PATTERN}\""
+                    gecho exit
+                    exit 1
+                fi
+            fi
+            gecho "v"
+            #
+            # copy the next one snap incrementally
+            gecho "    copy the next one snap incrementally"
+            #
+            # take the last snap in common
+            gecho -n "     - check if there is some commom snap between from and to... "
+            last_com_snapname=$( \
+                gcomm -12 \
+                    <(\
+                        ${SSH_CMD_TARGET} zfs list -t snapshot -r -d 1 -s creation -H -o name ${zfs_root_hist} \
+                        | cut -d "@" -f2 \
+                        | ggrep "${SNAP_HIST_PATTERN}" \
+                        2> /dev/null \
+                    ) \
+                    <(\
+                        zfs list -t snapshot -r -d 1 -s creation -H -o name ${zfs_root_source} \
+                        | cut -d "@" -f2 \
+                        | ggrep "${SNAP_HIST_PATTERN}" \
+                        2> /dev/null \
+                ) \
+                | tail -1 \
+                | gsed "s|\t||g" \
+                | gsed "s| ||g" \
+                )
+            # if no snap in commom
+            if test -z "${last_com_snapname}"
+            then
+                gecho "x"
+                gecho "     - no snap in common, you will destroy the target"
+                gecho "       zfs destroy ${zfs_root_hist}"
+                gecho "       and relaunch this command"
+                break
+            fi
+            # search for following snap
+            next_snap=$(zfs list -t snapshot -r -d 1 -s creation -H -o name ${zfs_root_source} \
+                      | cut -d "@" -f2 \
+                      | ggrep "${SNAP_HIST_PATTERN}" \
+                      | gsed -ne "/${last_com_snapname}/{n;p;}")
+            # if no followig snap
+            if test -z "${next_snap}"
+            then
+                gecho "x"
+                gecho "       - no other snapshot to send/receive"
+                break
+            fi
+            # has a following snap
+            gecho "v it us the snap(${next_snap})"
+            gecho "     - send ${zfs_root_source}@{${last_com_snapname},${next_snap}} | receive ${zfs_root_hist}"
+            zfs send -i ${zfs_root_source}@${last_com_snapname}  ${zfs_root_source}@${next_snap} \
+            |  ${SSH_XFER_TARGET} zfs receive -F ${zfs_root_hist}
+            continue
+        done
+    done
+}
+
+
+##################################
+#  CLONE
+#
+
+#
+# check that the last snap are the same for all of them
+function ezmount_last_snap()
+{
+    gecho -n "search for the last zfssnap... "
+    for subzfs in ${LIST_OF_SUBZFS_CLONE}
+    do
+        #
+        # construct the zfs HIST DB
+        if test -z "${subzfs}"
+        then
+            hist_zfs="${ZFS_ROOT_HIST}"
+            db_zfs="${ZFS_ROOT_CLONE}"
+        else
+            hist_zfs="${ZFS_ROOT_HIST}/${subzfs}"
+            db_zfs="${ZFS_ROOT_CLONE}/${subzfs}"
+        fi
+        #
+        # get the last snap of the hist
+        last_zfssnap=$(zfs list -H -o name -t snapshot -r -d 1 -s creation ${hist_zfs} \
+                      | ggrep "${SNAP_HIST_PATTERN}" \
+                      | tail -1)
+        if test -z "${last_zfssnap}"
+        then
+            gecho "x"
+            gecho " - exit"
+            exit 1
+        fi
+        last_snap=$(gecho ${last_zfssnap} | cut -d @ -f2)
+        last_snap_by_subzfs[${subzfs}]=${last_snap}
+    done
+    #
+    # check that the last_snap are the same for each subzfs
+    tmp_snap=${last_snap_by_subzfs[@]:0:1}
+    for value in ${last_snap_by_subzfs[@]}
+    do
+        if test "${value}" != "${tmp_snap}"
+        then
+            gecho "x"
+            gecho " - can not use this snap($tmp_snap) as it is not present"
+            gecho "   on all subzfs:"
+            for subzfs in "${!last_snap_by_subzfs[@]}"
+            do
+                gecho "    - ${subzfs} :${last_snap_by_subzfs[${subzfs}]} "
+            done
+            gecho " - exit"
+            exit 1
+        fi
+    done        
+    gecho "v"
+    #
+    # mount it
+    ezmount_snap "${tmp_snap}"
+}
+
+function ezmount_snap()
+{
+    snap=$1
+    if test "$(current)" == "$1"
+    then
+        gecho "last mounted($1) already mounted"
+        gecho " - exit"
+        exit 0
+    fi
+    #
+    # umount the clone
+    ezumount
+    #
+    # mount the clone
+    gecho -n "mounting the clone... "
+    for subzfs in ${LIST_OF_SUBZFS_CLONE}
+    do
+        #
+        # construct the zfs HIST DB
+        if test -z "${subzfs}"
+        then
+            hist_zfs="${ZFS_ROOT_HIST}"
+            db_zfs="${ZFS_ROOT_CLONE}"
+        else
+            hist_zfs="${ZFS_ROOT_HIST}/${subzfs}"
+            db_zfs="${ZFS_ROOT_CLONE}/${subzfs}"
+        fi
+        #
+        zfs_option=${ZFS_CLONE_CREATION_OPTION[${subzfs}]:-${ZFS_CLONE_CREATION_OPTION_DEFAULT}}
+        cmd="zfs clone ${zfs_option} ${hist_zfs}@${snap} ${db_zfs}"
+        if ! eval $cmd &> /dev/null
+        then
+            gecho "x"
+            gecho " - can not clone it, the cmd($cmd) failed !"
+            gecho " - exit"
+            exit 1
+        fi      
+    done
+    gecho "v"
+}
+
+function ezumount()
+{
+    gecho -n "umounting... "
+    for subzfs in ${LIST_OF_SUBZFS_CLONE}
+    do
+        # construct the zfs HIST DB
+        if test -z "${subzfs}"
+        then
+            hist_zfs="${ZFS_ROOT_HIST}"
+            db_zfs="${ZFS_ROOT_CLONE}"
+        else
+            hist_zfs="${ZFS_ROOT_HIST}/${subzfs}"
+            db_zfs="${ZFS_ROOT_CLONE}/${subzfs}"
+        fi
+        # is a clone mounted
+        if zfs list -t filesystem ${db_zfs} &> /dev/null
+        then
+            if test "$(zfs get -H ch.unige:created_by ${db_zfs} 2> /dev/null | cut -f3  )" != "${APPLICATION_NAME}"
+            then
+                gecho "x"
+                gecho " - this should no be happen to treat a zfs(${db_zfs})"
+                gecho "   which doesn't have the option ch.unige:created_by != ${APPLICATION_NAME}"
+                gecho " - exit"
+                exit 1
+            fi
+            if test "$(zfs get -H mounted  ${db_zfs} | cut -f3 2> /dev/null)" == "yes"
+            then
+                # umount it
+                cmd="zfs umount ${db_zfs}"
+                if ! eval $cmd &> /dev/null
+                then
+                    gecho "x"
+                    gecho " - can not umount it, the cmd($cmd) failed !"
+                    gecho " - exit"
+                    exit 1
+                fi
+            fi
+            # destroy the clone
+            cmd="zfs destroy -r ${db_zfs}"
+            if ! eval $cmd &> /dev/null
+            then
+                gecho "x"
+                gecho " - can not destroy it, the cmd($cmd) failed !"
+                gecho " - exit"
+                exit 1
+            fi
+        fi
+    done
+    gecho "v"
+}
+
+
+function list_zfs_root_clone()
+{
+    zfs list -H -o ch.unige.${APPLICATION_NAME}:zfs_root_clone | ggrep -v "-" | uniq
+}
+
+function current()
+{
+    zfs_root_clone="$1"
+    unset current_for_subzfs
+    declare -A current_for_subzfs
+    for subzfs in ${LIST_OF_SUBZFS_CLONE}
+    do
+        #
+        # construct the zfs HIST DB
+        if test -z "${subzfs}"
+        then
+            hist_zfs="${ZFS_ROOT_HIST}"
+            db_zfs="${zfs_root_clone}"
+        else
+            hist_zfs="${ZFS_ROOT_HIST}/${subzfs}"
+            db_zfs="${zfs_root_clone}/${subzfs}"
+        fi
+        if ! cur=$(zfs list -H -o origin ${db_zfs} 2> /dev/null)
+        then
+            continue
+        fi
+        current_for_subzfs[${subzfs}]="$(echo ${cur} | cut -d @ -f2)"
+    done
+    #
+    # check that the current_snap are the same for each subzfs
+    tmp_snap=${current_for_subzfs[@]:0:1}
+    for value in ${current_for_subzfs[@]}
+    do
+        if test "${value}" != "${tmp_snap}"
+        then
+            gecho "x"
+            gecho " - can not use this snap($tmp_snap) as it is not present"
+            gecho "   on all subzfs:"
+            for subzfs in "${!current_for_subzfs[@]}"
+            do
+                gecho "    - ${current_for_subzfs[${subzfs}]} for ${subzfs}"
+            done
+            gecho " - exit"
+            exit 1
+        fi
+    done
+    if test -n "${tmp_snap}"
+    then
+        gecho "${tmp_snap}"
+    fi
+}
+
+##################################
+#  CLEAN
+#
+
+#~ HOST_SOURCE="mdba3"
+#~ SSH_I_SOURCE="/root/.ssh/j-moins-1_rsa"
+#~ SSH_USER_HOST_SOURCE="su@${HOST_SOURCE}"
+#~ SSH_CMD_SOURCE="ssh -i ${SSH_I_SOURCE} ${SSH_USER_HOST_SOURCE}"
+#~ SSH_XFER_SOURCE="ssh -i ${SSH_I_SOURCE} -e none ${SSH_USER_HOST_SOURCE}"
+
+
+
+function clean()
+{
+    for subzfs in ${LIST_OF_SUBZFS_HIST}
+    do
+        #
+        # construct the zfs from to
+        if test -z "${subzfs}"
+        then
+            zfs_root_source="${ZFS_ROOT_SOURCE}"
+            zfs_root_hist="${ZFS_ROOT_HIST}"
+        else
+            zfs_root_source="${ZFS_ROOT_SOURCE}/${subzfs}"
+            zfs_root_hist="${ZFS_ROOT_HIST}/${subzfs}"
+        fi
+        i=0
+        gecho "-----"
+        gecho "doing zfs(${zfs_root_source}) "
+        gecho "-----"
+        while true
+        do
+            if (( i == ${MAX_SEND_OCCURENCE} ))
+            then
+                gecho "too many occurence, it seems a dead loop:"
+                gecho "skip this zfs(${zfs_root_source})"
+                break
+            fi
+            let i++
+            # search the first comon snapname
+            first_com_snapname=$( \
+            gcomm -12 \
+                <(\
+                    ${SSH_CMD_SOURCE} zfs list -t snapshot -r -d 1 -s creation -H -o name ${zfs_root_source} \
+                    | cut -d "@" -f2 \
+                    | ggrep "${SNAP_HIST_PATTERN}" \
+                    2> /dev/null \
+                ) \
+                <(\
+                    zfs list -t snapshot -r -d 1 -s creation -H -o name,ch.unige:created_by ${zfs_root_hist} \
+                    | ggrep -P "\t${APPLICATION_NAME}$" \
+                    | cut -f1 \
+                    | cut -d "@" -f2 \
+                    2> /dev/null \
+            ) \
+            | head -1 \
+            | gsed "s|\t||g" \
+            | gsed "s| ||g" \
+            )
+            if test -z "${first_com_snapname}"
+            then
+                gecho "x nothing to clean, as it has no commom snapshot with the source"
+                break
+            fi
+            # take the first snap in hist which is not cloned and that
+            # is younger than the first common snap
+            snap_to_destroy=$(\
+                zfs list -t snapshot -r -d 1 -s creation -H -o name ${zfs_root_hist} \
+                | ggrep -vf \
+                        <(zfs list -t filesystem  -o origin -H -r \
+                           | sort \
+                           | uniq \
+                           | ggrep -v '^-$' \
+                        ) \
+                | cut -d "@" -f2 \
+                | ggrep "${SNAP_HIST_PATTERN}" \
+                | head -1 \
+                | ggrep -f <(zfs list -t snapshot -r -d 1 -s creation -H -o name ${zfs_root_hist} \
+                              | cut -d "@" -f2 \
+                              | ggrep "${SNAP_HIST_PATTERN}" \
+                              | gsed  "/${first_com_snapname}/,$ d" \
+                            ) \
+                )
+            if test -z "${snap_to_destroy}"
+            then
+                gecho "v nothing to clean, as we do not have snapshot to remove"
+                break
+            fi
+            #
+            # for debugging
+            #~ echo "snap_to_destroy=${snap_to_destroy}"
+            #~ echo "first_com_snapname=${first_com_snapname}"
+            #~ echo "zfs_root_hist=${zfs_root_hist}"
+            #~ echo "SNAP_HIST_PATTERN=${SNAP_HIST_PATTERN}
+            
+            #
+            # destroy it
+            cmd="zfs destroy ${zfs_root_hist}@${snap_to_destroy}"
+            if ! eval $cmd &> /dev/null
+            then
+                gecho "x can not destroy it, the cmd($cmd) failed !"
+                gecho " - skip this zfs(${zfs_root_hist})"
+                break
+            fi
+        done
+    done
+}
+
+##################################
+#  UTIL
+#
+
+function list_snap()
+{
+    list_zfs=""
+    for subzfs in ${LIST_OF_SUBZFS_CLONE}
+    do
+        #
+        # construct the zfs HIST DB
+        if test -z "${subzfs}"
+        then
+            hist_zfs="${ZFS_ROOT_HIST}"
+            db_zfs="${ZFS_ROOT_CLONE}"
+        else
+            hist_zfs="${ZFS_ROOT_HIST}/${subzfs}"
+            db_zfs="${ZFS_ROOT_CLONE}/${subzfs}"
+        fi
+        #
+        list_zfs="${list_zfs} ${hist_zfs}"
+    done
+    zfs list -t snapshot -r -d 1 -H -o name -s creation ${list_zfs} \
+    | cut -d @ -f2 | uniq
+}
+
+
+
+function status()
+{
+    gecho "available snap:"
+    list_snap | gsed "s|^|  |"
+    gecho "clone mounted :"
+    last_snap=$(list_snap | tail -1)
+    for clone in $(list_zfs_root_clone)
+    do
+        snap=$(current $clone)
+        if test "${snap}" == "${last_snap}"
+        then
+            gecho "  v ${clone}@${snap}"
+        else
+            gecho "  x ${clone}@${snap}"
+        fi
+    done
+}
+
+##################################
+# MAIN UTIL
+#
+
+function exit_if_zfs_root_clone_overided()
+{
+    if test "${is_zfs_root_clone_overided}" == "True"
+    then
+        usage_n_exit
+    fi
+}
+
+function exit_if_not_on_target()
+{
+    if test "$(hostname | cut -d '.' -f1)" != "${HOST_TARGET}"
+    then
+        gecho "this command should be launched on the target"
+        gecho " - exit"
+        exit
+    fi
+}
+
+function exit_if_on_target()
+{
+    if test "$(hostname | cut -d '.' -f1)" == "${HOST_TARGET}"
+    then
+        gecho "this command should be launched on the target"
+        gecho " - exit"
+        exit
+    fi
+}
+
+##################################
+# MAIN
+#
+
+#
+# check that only mount can get an extra argument
+if ((  $# == 2 ))
+then
+    if test "$1" != "mount"
+    then
+        usage_n_exit
+    fi
+fi
+
+#
+# for info
+#~ function usage_n_exit()
+#~ {
+    #~ gecho "Usage: $(basename $0)  send"
+    #~ gecho "       $(basename $0) list-zfs-root-clone | list-snap"
+    #~ gecho "       $(basename $0) -b=<zfs_root_clone> current | list-snap | mount [snap] | umount"
+    #~ gecho "  e.g. -b=rpool/oracle/w-1"
+    #~ exit 1
+#~ }
+
+if test -z "$1"
+then
+    if test "$(hostname | cut -d '.' -f1)" == "${HOST_TARGET}"
+    then
+        status
+        exit 0
+    else
+        usage_n_exit
+    fi
+fi
+
+case "$1" in
+    umount)
+        exit_if_not_on_target
+        ezumount
+        ;;
+    unmount)
+        exit_if_not_on_target
+        ezumount
+        ;;
+    mount)
+        exit_if_not_on_target
+        snap=$2
+        if test -n "${snap}"
+        then
+            if list_snap | ggrep -q "^${snap}$" 
+            then
+                ezmount_snap ${snap}
+            else
+                gecho "can not mount snap(${snap}) as this in not in list-snap"
+                gecho "exit"
+                exit 1
+            fi
+        else
+            ezmount_last_snap
+        fi
+        clean
+        ;;
+    current)
+        exit_if_not_on_target
+        current ${ZFS_ROOT_CLONE}
+        ;;
+    list-snap)
+        exit_if_zfs_root_clone_overided
+        exit_if_not_on_target
+        list_snap
+        ;;
+    send)
+        exit_if_on_target
+        exit_if_zfs_root_clone_overided
+        send
+        ;;
+    list-zfs-root-clone)
+        exit_if_zfs_root_clone_overided
+        exit_if_not_on_target
+        list_zfs_root_clone
+        ;;
+    clean)
+        exit_if_not_on_target
+        clean
+        ;;
+    *)
+        usage_n_exit
+        ;;
+esac
