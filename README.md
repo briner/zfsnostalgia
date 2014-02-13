@@ -12,14 +12,15 @@ zfsnostalgia -h
   #     zfsnostalgia send
   #   on target host:
   #     zfsnostalgia list-zfs-root-clone | list-snap
-  #     zfsnostalgia -b=<zfs_root_clone> [ mount [snap] | current |umount | clean-old-snap ]
-  #     zfsnostalgia -b=<zfs_root_clone> umc [snap]
+  #     zfsnostalgia [-b=<zfs_root_clone>] [ mount [snap] | current | umount | clean-old-snap ]
+  #     zfsnostalgia [-b=<zfs_root_clone>] umc [snap]
   # 
-  default options:
+  #  default options:
   #      -b: rpool/oracle/ictst, allow to use an other rpool/oracle/ictst
   #    snap: the last (youngest) snapshot available
   # 
-  note: umc does: umount, mount & clean-old-snap
+  #  note: umc does: umount, mount & clean-old-snap
+  #   more info on : http://github.com/briner/zfsnostalgia
 ```
 
 * pay attention that mount, will do: umount, mount, clean
