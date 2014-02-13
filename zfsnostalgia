@@ -113,10 +113,13 @@ ZFS_CLONE_CREATION_OPTION_DEFAULT="-o ch.unige:no_snapshots=on \
 #
 # clean
 
+#
+# util
+DEFAULT_ZFS_ROOT_CLONE=${ZFS_ROOT_CLONE}
 
 #
-unset last_snap_by_subzfs
-declare -A last_snap_by_subzfs
+#~ unset last_snap_by_subzfs
+#~ declare -A last_snap_by_subzfs
 
 
 
@@ -246,61 +249,6 @@ function send()
 ##################################
 #  CLONE
 #
-
-#
-# check that the last snap are the same for all of them
-#~ function mount_last_snap()
-#~ {
-    #~ gecho -n "search for the last zfssnap... "
-    #~ for subzfs in ${LIST_OF_SUBZFS_CLONE}
-    #~ do
-        #~ #
-        #~ # construct the zfs HIST DB
-        #~ if test -z "${subzfs}"
-        #~ then
-            #~ hist_zfs="${ZFS_ROOT_HIST}"
-            #~ db_zfs="${ZFS_ROOT_CLONE}"
-        #~ else
-            #~ hist_zfs="${ZFS_ROOT_HIST}/${subzfs}"
-            #~ db_zfs="${ZFS_ROOT_CLONE}/${subzfs}"
-        #~ fi
-        #~ #
-        #~ # get the last snap of the hist
-        #~ last_zfssnap=$(zfs list -H -o name -t snapshot -r -d 1 -s creation ${hist_zfs} \
-                      #~ | ggrep "${SNAP_HIST_PATTERN}" \
-                      #~ | tail -1)
-        #~ if test -z "${last_zfssnap}"
-        #~ then
-            #~ gecho "x"
-            #~ gecho " - exit"
-            #~ exit 1
-        #~ fi
-        #~ last_snap=$(gecho ${last_zfssnap} | cut -d @ -f2)
-        #~ last_snap_by_subzfs[${subzfs}]=${last_snap}
-    #~ done
-    #~ #
-    #~ # check that the last_snap are the same for each subzfs
-    #~ tmp_snap=${last_snap_by_subzfs[@]:0:1}
-    #~ for value in ${last_snap_by_subzfs[@]}
-    #~ do
-        #~ if test "${value}" != "${tmp_snap}"
-        #~ then
-            #~ gecho "x"
-            #~ gecho " - can not use this snap($tmp_snap) as it is not present"
-            #~ gecho "   on all subzfs:"
-            #~ for subzfs in "${!last_snap_by_subzfs[@]}"
-            #~ do
-                #~ gecho "    - ${subzfs} :${last_snap_by_subzfs[${subzfs}]} "
-            #~ done
-            #~ gecho " - exit"
-            #~ exit 1
-        #~ fi
-    #~ done        
-    #~ gecho "v"
-    #~ #
-    #~ # mount it
-    #~ mount_snap "${tmp_snap}"
-#~ }
 
 function zn_mount_snap()
 {
@@ -507,6 +455,8 @@ function current()
 
 function clean_old_snap()
 {
+    is_error_on_clean="False"
+    gecho -n "clean old snapshot... "
     for subzfs in ${LIST_OF_SUBZFS_HIST}
     do
         #
@@ -520,15 +470,17 @@ function clean_old_snap()
             zfs_root_hist="${ZFS_ROOT_HIST}/${subzfs}"
         fi
         i=0
-        gecho "-----"
-        gecho "doing zfs(${zfs_root_source}) "
-        gecho "-----"
+        #~ gecho "-----"
+        #~ gecho "doing zfs(${zfs_root_source}) "
+        #~ gecho "-----"
         while true
         do
             if (( i == ${MAX_TRY} ))
             then
-                gecho "too many occurence, it seems a dead loop:"
-                gecho "skip this zfs(${zfs_root_source})"
+                gecho "x"
+                gecho "- too many occurence, it seems a dead loop:"
+                gecho "  skip this zfs(${zfs_root_source})"
+                is_error_on_clean="True"
                 break
             fi
             let i++
@@ -554,7 +506,7 @@ function clean_old_snap()
             )
             if test -z "${first_com_snapname}"
             then
-                gecho "x nothing to clean, as it has no commom snapshot with the source"
+                # nothing to clean, as it has no commom snapshot with the source
                 break
             fi
             # take the first snap in hist which is not cloned and that
@@ -578,15 +530,9 @@ function clean_old_snap()
                 )
             if test -z "${snap_to_destroy}"
             then
-                gecho "v nothing to clean, as we do not have snapshot to remove"
+                # nothing to clean, as we do not have snapshot to remove
                 break
             fi
-            #
-            # for debugging
-            #~ echo "snap_to_destroy=${snap_to_destroy}"
-            #~ echo "first_com_snapname=${first_com_snapname}"
-            #~ echo "zfs_root_hist=${zfs_root_hist}"
-            #~ echo "SNAP_HIST_PATTERN=${SNAP_HIST_PATTERN}
             
             #
             # destroy it
@@ -595,10 +541,15 @@ function clean_old_snap()
             then
                 gecho "x can not destroy it, the cmd($cmd) failed !"
                 gecho " - skip this zfs(${zfs_root_hist})"
+                is_error_on_clean="True"
                 break
             fi
         done
     done
+    if test "${is_error_on_clean}" == "False"
+    then
+        gecho "v"
+    fi
 }
 
 ##################################
@@ -631,20 +582,41 @@ function list_snap()
 
 function status()
 {
+    last_snap=$(list_snap | tail -1)
+    #
+    # snap
     gecho "available snap:"
     list_snap | gsed "s|^|  |"
-    gecho "clone mounted :"
-    last_snap=$(list_snap | tail -1)
-    for clone in $(list_zfs_root_clone)
-    do
-        snap=$(current $clone)
-        if test "${snap}" == "${last_snap}"
-        then
-            gecho "  v ${clone}@${snap}"
-        else
-            gecho "  x ${clone}@${snap}"
-        fi
-    done
+    #
+    # clone
+    gecho "clone mounted : d(Default zfs_root_clone), l(using Last snapshot available), o(using a old snapshot)"
+    tmp_list_zfs_root_clone=$(list_zfs_root_clone)
+    if test -z "${tmp_list_zfs_root_clone}"
+    then
+        gecho "  -"
+    else
+        for clone in ${tmp_list_zfs_root_clone}
+        do
+            #
+            # is this the default ZFS_ROOT_CLONE
+            if test "${DEFAULT_ZFS_ROOT_CLONE}" == "${ZFS_ROOT_CLONE}"
+            then
+                gecho -n "  d"
+            else
+                gecho -n "  -"
+            fi
+            #
+            #
+            snap=$(current $clone)
+            if test "${snap}" == "${last_snap}"
+            then
+                gecho -n "l"
+            else
+                gecho -n "o"
+            fi
+            gecho " ${clone}@${snap}"
+        done
+    fi
 }
 
 ##################################
