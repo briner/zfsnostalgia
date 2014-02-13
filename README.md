@@ -7,8 +7,7 @@ tools to create many clone of a a  zfs'set to an distant host which will be base
 
 * on host host-src named host-src
 
-* if you give a look to the source you will see
-
+ * if you give a look to the source you will see, the configuation used. It mainly instruct zfsnostalgia that
 ```bash
 LIST_OF_SUBZFS_HIST="ctl_rdo data admin"
 …
@@ -18,12 +17,20 @@ SNAP_HIST_PATTERN="dolly"
 …
 HOST_TARGET="host-tgt"
 HOST_SOURCE="host-src"
-
 ```
+  * the send receive will be done from host-src to host-tgt
+  * host-tgt:rpool/oracle/dbatst1 will be pushed to host-src:rpool/oracle/ictst-hist
+  * the subzfs: ctl_rdo,data,admin will be send. So in our case 
+   * zfs(rpool/oracle/dbatst1/admin) on host-src will be send to zfs(rpool/oracle/ictst-hist/admin) on host-tgt
+   * zfs(rpool/oracle/dbatst1/ctl_rdo) on host-src will be send to zfs(rpool/oracle/ictst-hist/ctl_rdo) on host-tgt
+   * zfs(rpool/oracle/dbatst1/data) on host-src will be send to zfs(rpool/oracle/ictst-hist/data) on host-tgt
+  * but zfs(rpool/oracle/ictst-hist) should be created by hand
+  * SNAP_HIST_PATTERN tells zfsnostalgia which snapshot to consider for sending/receiving
 
-..* to send the data from the host-src to host-tgt do
 
-```
+ * to send the data from the host-src to host-tgt do
+
+```bash
 zfsnostalgia send
   # starting send
   # -----
@@ -79,7 +86,7 @@ zfsnostalgia send
   #        - no other snapshot to send/receive
 ```
 
-as you can see, if we follow for eg zfs(rpool/oracle/dbatst1/data), we do 3 steps
+as you can see, if we follow for example the zfs(rpool/oracle/dbatst1/data), we do have 3 steps
 ..1 first we see that there is no such target zfs, so let's send the oldest snapshot we have
 ..1 we see that we have a zfs on the target, but that this is not the latest one. So we'll send him the next one
 ..1 all the snap were send, so we skip this zfs and go to the next one (rpool/oracle/dbatst1/data)
@@ -88,19 +95,23 @@ as you can see, if we follow for eg zfs(rpool/oracle/dbatst1/data), we do 3 ste
 
  * check that we receive
 
+```bash
 zfsnostalgia 
   # available snap:
   #   dolly_mnt::2014.02.11_19:00:03.879178::mdba3::ONLINE
   #   dolly_mnt::2014.02.12_19:00:06.723837::mdba3::ONLINE
   # clone mounted :
-
+````
  * we see that 
 zfs list gives 3 new zfs …/admin  …/ctl_rdo …/data
+```bash
+zfs list
   # …
   # rpool/oracle/ictst-hist/admin      969M  66.0G   949M  /oracle/ictst-hist/admin
   # rpool/oracle/ictst-hist/ctl_rdo    416M  66.0G   311M  /oracle/ictst-hist/ctl_rdo
   # rpool/oracle/ictst-hist/data      9.78G  66.0G  9.56G  /oracle/ictst-hist/data
   # …
+```
 
 we can see that the zfs were created on host-tgt, and also that 2 snapshots were sent.
 

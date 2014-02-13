@@ -15,7 +15,7 @@ ZFS_ROOT_HIST="rpool/oracle/ictst-hist"
 ZFS_ROOT_CLONE="rpool/oracle/ictst"
 SNAP_HIST_PATTERN="dolly"
 
-MAX_SEND_OCCURENCE=10
+MAX_TRY=10
 
 #
 # ssh
@@ -150,7 +150,7 @@ function send()
             gecho "  step (${i})"
             #
             # exit if dead loop
-            if (( i == ${MAX_SEND_OCCURENCE} ))
+            if (( i == ${MAX_TRY} ))
             then
                 gecho "too many occurence, it seems a dead loop:"
                 gecho "skip this zfs(${zfs_root_source})"
@@ -477,7 +477,7 @@ function clean()
         gecho "-----"
         while true
         do
-            if (( i == ${MAX_SEND_OCCURENCE} ))
+            if (( i == ${MAX_TRY} ))
             then
                 gecho "too many occurence, it seems a dead loop:"
                 gecho "skip this zfs(${zfs_root_source})"
