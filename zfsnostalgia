@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export PATH="/usr/sbin:/usr/bin"
+
 ##################################
 # DEFINITION
 #
@@ -107,12 +109,10 @@ ZFS_CLONE_CREATION_OPTION["data"]="-o recordsize=8k \
                                    -o primarycache=metadata \
                                    -o logbias=throughput \
                                    -o ch.unige:no_snapshots=on \
-                                   -o readonly=on \
                                    -o ch.unige:created_by=${APPLICATION_NAME} \
                                    -o ch.unige.${APPLICATION_NAME}:zfs_root_clone=${ZFS_ROOT_CLONE}"                                   
 #
 ZFS_CLONE_CREATION_OPTION_DEFAULT="-o ch.unige:no_snapshots=on \
-                                   -o readonly=on \
                                    -o ch.unige:created_by=${APPLICATION_NAME} \
                                    -o ch.unige.${APPLICATION_NAME}:zfs_root_clone=${ZFS_ROOT_CLONE}"
 #
