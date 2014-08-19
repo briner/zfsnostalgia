@@ -166,5 +166,5 @@ we can see that the zfs were created on host-tgt, and also that 2 snapshots were
 
 # FAQ
 1. what is list-snap-incoherent for ?
-For every send, we transmit snapshot from the source machine to the destination one. We do this for a list of ZFS specified by LIST_OF_SUBZFS_HIST. Normally a snapname should be available on all the ZFS specified by LIST_OF_SUBZFS_HIST. But on the case that the send fail in the middle or that the list-snap-incoherent is launch during a send, list-snap will not show this snapname, but list-snap-incoherent will.
-list-snap-incoherent shows snapname that are not on every zfs
+
+For every send, we transmit snapshot from the source machine to the destination one. We do this for a list of ZFS specified by LIST_OF_SUBZFS_HIST. Normally a snapname should be available on all the ZFS specified by LIST_OF_SUBZFS_HIST. But on the case that the send fail in the middle or that the list-snap-incoherent is launch during a send, list-snap will not show this snapname, but list-snap-incoherent will.  list-snap-incoherent shows snapname that are not on every zfs
