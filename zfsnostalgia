@@ -1,5 +1,19 @@
 #!/bin/bash
 
+# - copy zfsnostalgia on both host
+# - create ssh key on both side
+#     ssh-keygen -t rsa
+#     Enter file in which to save the key (/root/.ssh/id_rsa): /root/.ssh/zfsnostalgia_rsa
+#     ...
+# - copy the pub key on remote side in both way
+# - create zfs "zfs create ${ZFS_ROOT_HIST}"
+# - open the firewall for ssh on both side for the other side
+# - connect once on both side with ssh "${SSH_CMD_TARGET}" and "${SSH_XFER_SOURCE}"
+#   to accept the rsa fingerprint
+# 
+# then now you can do a "zfsnostalgia send from ${HOST_SOURCE}"
+
+
 export PATH="/usr/sbin:/usr/bin"
 
 ##################################
@@ -54,7 +68,7 @@ function usage_n_exit()
     gecho "  on source host:"
     gecho "    $(basename $0) send"
     gecho "  on target host:"
-    gecho "    $(basename $0) list-zfs-root-clone | list-snap"
+    gecho "    $(basename $0) list-zfs-root-clone | list-snap | list-snap-incoherent"
     gecho "    $(basename $0) [-b=<zfs_root_clone>] [ mount [snap] | current | umount | clean-old-snap ]"
     gecho "    $(basename $0) [-b=<zfs_root_clone>] umc [snap]"
     gecho ""
@@ -132,7 +146,7 @@ ZFS_CLONE_CREATION_OPTION_DEFAULT="-o ch.unige:no_snapshots=on \
 
 
 
-function send()
+function zn_send()
 {
     gecho "starting send"
     for subzfs in ${LIST_OF_SUBZFS_HIST}
@@ -257,7 +271,7 @@ function zn_mount_snap()
     #
     # parse the arguments
     has_to_force_umount="False"
-    if test $1 == "--force-umount"
+    if test $1 = "--force-umount"
     then
         has_to_force_umount="True"
         snap=$2
@@ -266,7 +280,7 @@ function zn_mount_snap()
     fi
     #
     # check if already mounted
-    if test "$(current ${ZFS_ROOT_CLONE})" == "${snap}"
+    if test "$(current ${ZFS_ROOT_CLONE})" = "${snap}"
     then
         gecho "last mounted(${snap}) already mounted"
         gecho " - exit"
@@ -274,7 +288,7 @@ function zn_mount_snap()
     fi
     #
     # umount the clone
-    if test "${has_to_force_umount}" == "True"
+    if test "${has_to_force_umount}" = "True"
     then
         zn_umount
     fi
@@ -359,7 +373,7 @@ function zn_umount()
                 gecho " - exit"
                 exit 1
             fi
-            if test "$(zfs get -H mounted  ${db_zfs} | cut -f3 2> /dev/null)" == "yes"
+            if test "$(zfs get -H mounted  ${db_zfs} | cut -f3 2> /dev/null)" = "yes"
             then
                 # umount it
                 cmd="zfs umount ${db_zfs}"
@@ -545,7 +559,7 @@ function clean_old_snap()
             fi
         done
     done
-    if test "${is_error_on_clean}" == "False"
+    if test "${is_error_on_clean}" = "False"
     then
         gecho "v"
     fi
@@ -557,8 +571,21 @@ function clean_old_snap()
 
 function list_snap()
 {
-    list_zfs=""
-    for subzfs in ${LIST_OF_SUBZFS_CLONE}
+    lret_snap_coherent=""
+    lret_snap_incoherent=""
+    #
+    # parse the arguments
+    show_incoherent="False"
+    if test "X${1}" = "X--show-incoherent"
+    then
+        show_incoherent="True"
+    fi
+    # search all the snapname related to zfsnostalgia of ZFS_ROOT_HIST
+    lsnapname=$(zfs list -t snapshot -Ho name,ch.unige:created_by -r $ZFS_ROOT_HIST \
+           | cut -f1| cut -d "@" -f2 | sort -u)
+    # construct the list of zfs for which a send occurs
+    list_zfs_ref=""
+    for subzfs in ${LIST_OF_SUBZFS_HIST}
     do
         #
         # construct the zfs HIST DB
@@ -571,10 +598,28 @@ function list_snap()
             db_zfs="${ZFS_ROOT_CLONE}/${subzfs}"
         fi
         #
-        list_zfs="${list_zfs} ${hist_zfs}"
+        list_zfs_ref="${list_zfs_ref} ${hist_zfs}"
     done
-    zfs list -t snapshot -r -d 1 -H -o name -s creation ${list_zfs} \
-    | cut -d @ -f2 | uniq
+    list_zfs_ref=$(echo ${list_zfs_ref} | tr -s " " "\n" | sort -u)
+    # for each snap verify that their is LIST_OF_SUBZFS_HIST  
+    for snapname in ${lsnapname}
+    do
+        list_zfs_from_snapname=$(zfs list -o name -t snapshot \
+                                | ggrep -E "@${snapname}"'$' \
+                                | cut -d "@" -f1 | sort -u)
+        if test "${list_zfs_ref}" = "${list_zfs_from_snapname}"
+        then
+            lret_snap_coherent="${lret_snap_coherent} ${snapname}"
+        else
+            lret_snap_incoherent="${lret_snap_incoherent} ${snapname}"
+        fi
+    done
+    if test "${show_incoherent}" = "True"
+    then
+        gecho ${lret_snap_incoherent} | tr -s " " '\n'
+    else
+        echo ${lret_snap_coherent} | tr -s " " '\n'
+    fi
 }
 
 
@@ -598,7 +643,7 @@ function status()
         do
             #
             # is this the default ZFS_ROOT_CLONE
-            if test "${DEFAULT_ZFS_ROOT_CLONE}" == "${clone}"
+            if test "${DEFAULT_ZFS_ROOT_CLONE}" = "${clone}"
             then
                 gecho -n "  d"
             else
@@ -607,7 +652,7 @@ function status()
             #
             #
             snap=$(current $clone)
-            if test "${snap}" == "${last_snap}"
+            if test "${snap}" = "${last_snap}"
             then
                 gecho -n "l"
             else
@@ -624,7 +669,7 @@ function status()
 
 function exit_if_zfs_root_clone_overided()
 {
-    if test "${is_zfs_root_clone_overided}" == "True"
+    if test "${is_zfs_root_clone_overided}" = "True"
     then
         usage_n_exit
     fi
@@ -642,7 +687,7 @@ function exit_if_not_on_target()
 
 function exit_if_on_target()
 {
-    if test "$(hostname | cut -d '.' -f1)" == "${HOST_TARGET}"
+    if test "$(hostname | cut -d '.' -f1)" = "${HOST_TARGET}"
     then
         gecho "this command should be launched on the target"
         gecho " - exit"
@@ -669,7 +714,7 @@ fi
 
 if test -z "$1"
 then
-    if test "$(hostname | cut -d '.' -f1)" == "${HOST_TARGET}"
+    if test "$(hostname | cut -d '.' -f1)" = "${HOST_TARGET}"
     then
         status
         exit 0
@@ -743,10 +788,15 @@ case "$1" in
         exit_if_not_on_target
         list_snap
         ;;
+    list-snap-incoherent)
+        exit_if_zfs_root_clone_overided
+        exit_if_not_on_target
+        list_snap --show-incoherent
+        ;;
     send)
         exit_if_on_target
         exit_if_zfs_root_clone_overided
-        send
+        zn_send
         ;;
     list-zfs-root-clone)
         exit_if_zfs_root_clone_overided

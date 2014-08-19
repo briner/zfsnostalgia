@@ -11,7 +11,7 @@ zfsnostalgia -h
   #   on source host:
   #     zfsnostalgia send
   #   on target host:
-  #     zfsnostalgia list-zfs-root-clone | list-snap
+  #     zfsnostalgia list-zfs-root-clone | list-snap | list-snap-incoherent
   #     zfsnostalgia [-b=<zfs_root_clone>] [ mount [snap] | current | umount | clean-old-snap ]
   #     zfsnostalgia [-b=<zfs_root_clone>] umc [snap]
   # 
@@ -163,3 +163,8 @@ rpool/oracle/ictst/export   /oracle/ictst/export   -
    * the only ZFS cloned are …/ctl_rdo and …/data (rembember the ```LIST_OF_SUBZFS_CLONE```)
    
 we can see that the zfs were created on host-tgt, and also that 2 snapshots were sent.
+
+# FAQ
+1. what is list-snap-incoherent for ?
+For every send, we transmit snapshot from the source machine to the destination one. We do this for a list of ZFS specified by LIST_OF_SUBZFS_HIST. Normally a snapname should be available on all the ZFS specified by LIST_OF_SUBZFS_HIST. But on the case that the send fail in the middle or that the list-snap-incoherent is launch during a send, list-snap will not show this snapname, but list-snap-incoherent will.
+list-snap-incoherent shows snapname that are not on every zfs
