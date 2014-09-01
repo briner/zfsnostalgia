@@ -194,9 +194,10 @@ function zn_send()
                 if test -n "${first_zfssnap}"
                 then
                     gecho "v"
-                    gecho "       - do a full from (${first_zfssnap}) to (${zfs_root_hist})"
+                    gecho "       - do a full from (${first_zfssnap}) to (${zfs_root_hist}) @ $( date +"%Y-%m-%d %H:%M:%S" )"
                     zfs_option=${ZFS_HIST_CREATION_OPTION[${subzfs}]:-${ZFS_HIST_CREATION_OPTION_DEFAULT}}
                     zfs send ${first_zfssnap} | ${SSH_XFER_TARGET} zfs receive ${zfs_option} ${zfs_root_hist}
+                    gecho "         - done  @ $( date +"%Y-%m-%d %H:%M:%S" )"
                     continue
                 else
                     gecho "x"
@@ -253,9 +254,10 @@ function zn_send()
             fi
             # has a following snap
             gecho "v it us the snap(${next_snap})"
-            gecho "     - send ${zfs_root_source}@{${last_com_snapname},${next_snap}} | receive ${zfs_root_hist}"
+            gecho "     - send ${zfs_root_source}@{${last_com_snapname},${next_snap}} | receive ${zfs_root_hist} @ $( date +"%Y-%m-%d %H:%M:%S" )"
             zfs send -i ${zfs_root_source}@${last_com_snapname}  ${zfs_root_source}@${next_snap} \
             |  ${SSH_XFER_TARGET} zfs receive -F ${zfs_root_hist}
+            gecho "       - done @ $( date +"%Y-%m-%d %H:%M:%S" )"
             continue
         done
     done
