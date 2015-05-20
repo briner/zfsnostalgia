@@ -26,9 +26,9 @@ APPLICATION_NAME="zfsnostalgia"
 LIST_OF_SUBZFS_HIST="ctl_rdo data admin"
 LIST_OF_SUBZFS_CLONE="ctl_rdo data"
 
-ZFS_ROOT_SOURCE="rpool/oracle/dbatst1"
-ZFS_ROOT_HIST="rpool/oracle/ictst-hist"
-ZFS_ROOT_CLONE="rpool/oracle/ictst"
+ZFS_ROOT_SOURCE="rpool/oracle/infaprd"
+ZFS_ROOT_HIST="rpool/oracle/icprd-hist"
+ZFS_ROOT_CLONE="rpool/oracle/icprd"
 SNAP_HIST_PATTERN="dolly"
 
 MAX_TRY=10
@@ -36,13 +36,13 @@ MAX_TRY=10
 #
 # ssh
 
-HOST_TARGET="mdba4"
+HOST_TARGET="heracles"
 SSH_I_TARGET="/root/.ssh/zfsnostalgia_rsa"
 SSH_USER_HOST_TARGET="su@${HOST_TARGET}"
 SSH_CMD_TARGET="ssh -i ${SSH_I_TARGET} ${SSH_USER_HOST_TARGET}"
 SSH_XFER_TARGET="ssh -i ${SSH_I_TARGET} -e none ${SSH_USER_HOST_TARGET}"
 
-HOST_SOURCE="mdba3"
+HOST_SOURCE="ajax"
 SSH_I_SOURCE="/root/.ssh/zfsnostalgia_rsa"
 SSH_USER_HOST_SOURCE="su@${HOST_SOURCE}"
 SSH_CMD_SOURCE="ssh -i ${SSH_I_SOURCE} ${SSH_USER_HOST_SOURCE}"
@@ -51,7 +51,6 @@ SSH_XFER_SOURCE="ssh -i ${SSH_I_SOURCE} -e none ${SSH_USER_HOST_SOURCE}"
 #
 # util
 DEFAULT_ZFS_ROOT_CLONE="${ZFS_ROOT_CLONE}"
-
 
 
 ##################################
@@ -148,6 +147,7 @@ ZFS_CLONE_CREATION_OPTION_DEFAULT="-o ch.unige:no_snapshots=on \
 
 function zn_send()
 {
+    status=0
     gecho "starting send"
     for subzfs in ${LIST_OF_SUBZFS_HIST}
     do
@@ -175,6 +175,7 @@ function zn_send()
             then
                 gecho "too many occurence, it seems a dead loop:"
                 gecho "skip this zfs(${zfs_root_source})"
+                status=1
                 break
             fi
             #
@@ -261,6 +262,10 @@ function zn_send()
             continue
         done
     done
+    if test ${status} -ne 0
+    then
+        exit ${status}
+    fi
 }
 
 
