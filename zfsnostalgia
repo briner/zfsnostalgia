@@ -1,7 +1,5 @@
 #!/bin/bash
 
-VERSION="$Id$"
-
 # - copy zfsnostalgia on both host
 # - create ssh key on both side
 #     ssh-keygen -t rsa
@@ -28,29 +26,28 @@ APPLICATION_NAME="zfsnostalgia"
 LIST_OF_SUBZFS_HIST="ctl_rdo data admin"
 LIST_OF_SUBZFS_CLONE="ctl_rdo data"
 
-$ZFS_ROOT_SOURCE="rpool/oracle/infaprd"
-ZFS_ROOT_HIST="rpool/oracle/icprd-hist"
-ZFS_ROOT_CLONE="rpool/oracle/icprd"
+ZFS_ROOT_SOURCE="rpool/oracle/dbatst1"
+ZFS_ROOT_HIST="rpool/oracle/ictst-hist"
+ZFS_ROOT_CLONE="rpool/oracle/ictst"
 SNAP_HIST_PATTERN="dolly"
+DOLLY_MOUNTPOINT="/dolly/dbatst1"
 
 MAX_TRY=10
 
 #
 # ssh
 
-HOST_SOURCE="ajax"
-SSH_I_SOURCE="/root/.ssh/zfsnostalgia_rsa"
-SSH_USER_HOST_SOURCE="su@${HOST_SOURCE}"
-SSH_CMD_SOURCE="ssh -i ${SSH_I_SOURCE} ${SSH_USER_HOST_SOURCE}"
-SSH_XFER_SOURCE="ssh -i ${SSH_I_SOURCE} -e none ${SSH_USER_HOST_SOURCE}"
-
-
-HOST_TARGET="heracles"
+HOST_TARGET="mdba4"
 SSH_I_TARGET="/root/.ssh/zfsnostalgia_rsa"
 SSH_USER_HOST_TARGET="su@${HOST_TARGET}"
 SSH_CMD_TARGET="ssh -i ${SSH_I_TARGET} ${SSH_USER_HOST_TARGET}"
 SSH_XFER_TARGET="ssh -i ${SSH_I_TARGET} -e none ${SSH_USER_HOST_TARGET}"
 
+HOST_SOURCE="mdba3"
+SSH_I_SOURCE="/root/.ssh/zfsnostalgia_rsa"
+SSH_USER_HOST_SOURCE="su@${HOST_SOURCE}"
+SSH_CMD_SOURCE="ssh -i ${SSH_I_SOURCE} ${SSH_USER_HOST_SOURCE}"
+SSH_XFER_SOURCE="ssh -i ${SSH_I_SOURCE} -e none ${SSH_USER_HOST_SOURCE}"
 
 #
 # util
@@ -227,7 +224,9 @@ function zn_send()
                         2> /dev/null \
                     ) \
                     <(\
-                        zfs list -t snapshot -r -d 1 -s creation -H -o name ${zfs_root_source} \
+                        zfs list -t snapshot -r -d 1 -s creation -H -o name,ch.unige.dolly:mountpoint ${zfs_root_source} \
+                        | ggrep -P "\t${DOLLY_MOUNTPOINT}$" \
+                        | cut -f1 \
                         | cut -d "@" -f2 \
                         | ggrep "${SNAP_HIST_PATTERN}" \
                         2> /dev/null \
@@ -246,7 +245,9 @@ function zn_send()
                 break
             fi
             # search for following snap
-            next_snap=$(zfs list -t snapshot -r -d 1 -s creation -H -o name ${zfs_root_source} \
+            next_snap=$(zfs list -t snapshot -r -d 1 -s creation -H -o name,ch.unige.dolly:mountpoint ${zfs_root_source} \
+                      | ggrep -P "\t${DOLLY_MOUNTPOINT}$" \
+                      | cut -f1 \
                       | cut -d "@" -f2 \
                       | ggrep "${SNAP_HIST_PATTERN}" \
                       | gsed -ne "/${last_com_snapname}/{n;p;}")
@@ -513,7 +514,9 @@ function clean_old_snap()
             first_com_snapname=$( \
             gcomm -12 \
                 <(\
-                    ${SSH_CMD_SOURCE} zfs list -t snapshot -r -d 1 -s creation -H -o name ${zfs_root_source} \
+                    ${SSH_CMD_SOURCE} zfs list -t snapshot -r -d 1 -s creation -H -o name,ch.unige.dolly:mountpoint ${zfs_root_source} \
+                    | ggrep -P "\t${DOLLY_MOUNTPOINT}$" \
+                    | cut -f1 \
                     | cut -d "@" -f2 \
                     | ggrep "${SNAP_HIST_PATTERN}" \
                     2> /dev/null \
