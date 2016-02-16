@@ -205,7 +205,7 @@ function zn_send()
                     gecho "x"
                     gecho "       - unable to create a full zfs for zfs(zfs_root_source) as it has not a snapshotname catched by grep \"${SNAP_HIST_PATTERN}\""
                     gecho exit
-                    exit 1
+                    exit 1
                 fi
             fi
             gecho "v"
